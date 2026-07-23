@@ -1,0 +1,16 @@
+# Script output. These contain tenant IDs, site IDs and URLs.
+/*.csv
+/*.txt
+/*.reg
+SPO_LibraryIds*
+automount*.reg
+
+# Test output
+testResults*.xml
+coverage*.xml
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
