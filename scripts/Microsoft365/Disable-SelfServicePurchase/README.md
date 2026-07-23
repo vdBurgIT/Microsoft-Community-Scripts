@@ -97,6 +97,29 @@ working entirely. Version 2 changed the update parameter from a boolean
 installed module expects and adapts, but if you see odd behaviour, run
 `Update-Module MSCommerce` first.
 
+**The module install can fail on a signature check.** You may get this:
+
+```
+Install-Package: The module 'MSCommerce' cannot be installed or updated
+because the authenticode signature of the file 'MSCommerce.psd1' is not valid.
+```
+
+PowerShellGet compares the publisher signature against a copy of the module that
+is already installed, and refuses when they do not match. It is not specific to
+MSCommerce; the same error shows up for MicrosoftTeams, PnP.PowerShell and
+others.
+
+Look for the copy that is in the way first:
+
+```powershell
+Get-Module MSCommerce -ListAvailable | Select-Object Name, Version, ModuleBase
+```
+
+An old copy under `C:\Program Files\WindowsPowerShell\Modules` is almost always
+the culprit. Removing it is cleaner than skipping the check. If you cannot, run
+the script with `-SkipPublisherCheck`, and know that you are switching off a real
+signature validation to do it.
+
 **Users still see the option in some places.** The policy blocks the purchase, it
 does not always hide the button. Expect the occasional "why can't I buy this"
 ticket. That is the feature working.

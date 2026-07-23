@@ -37,6 +37,10 @@
 .PARAMETER SkipOfferType
     Only touch Microsoft products, leave third-party offer types alone.
 
+.PARAMETER SkipPublisherCheck
+    Bypass PowerShellGet's publisher signature check when installing MSCommerce.
+    Only reach for this if the install fails with an authenticode error.
+
 .EXAMPLE
     Connect-MSCommerce
     .\Disable-SelfServicePurchase.ps1
@@ -67,7 +71,11 @@ param(
 
     [string[]]$ProductId,
 
-    [switch]$SkipOfferType
+    [switch]$SkipOfferType,
+
+    # Bypass PowerShellGet's publisher signature check when installing the
+    # module. Only needed if the install fails on an authenticode error.
+    [switch]$SkipPublisherCheck
 )
 
 $ErrorActionPreference = 'Stop'
@@ -77,7 +85,39 @@ Set-StrictMode -Version Latest
 
 if (-not (Get-Module -ListAvailable -Name MSCommerce)) {
     Write-Host 'Installing the MSCommerce module...' -ForegroundColor Yellow
-    Install-Module -Name MSCommerce -Scope CurrentUser -Force -AllowClobber
+
+    $installSplat = @{
+        Name        = 'MSCommerce'
+        Scope       = 'CurrentUser'
+        Force       = $true
+        AllowClobber = $true
+        ErrorAction = 'Stop'
+    }
+    if ($SkipPublisherCheck) { $installSplat.SkipPublisherCheck = $true }
+
+    try {
+        Install-Module @installSplat
+    }
+    catch {
+        # PowerShellGet refuses the install when the catalog signature does not
+        # validate against an already-present copy of the module. Skipping that
+        # check is a real security decision, so surface it instead of doing it
+        # quietly.
+        if ($_.Exception.Message -match 'authenticode|publisher') {
+            throw @'
+The MSCommerce module failed its signature check.
+
+This usually means another copy is already installed, signed by a different
+publisher. Check for it first:
+
+    Get-Module MSCommerce -ListAvailable | Select-Object Name, Version, ModuleBase
+
+If an old copy sits under Program Files, remove that and try again. To install
+anyway and skip the publisher check, re-run this script with -SkipPublisherCheck.
+'@
+        }
+        throw
+    }
 }
 Import-Module MSCommerce -ErrorAction Stop
 
