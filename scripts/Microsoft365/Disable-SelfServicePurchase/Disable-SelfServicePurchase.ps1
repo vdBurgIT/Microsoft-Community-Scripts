@@ -2,47 +2,78 @@
 
 <#
 .SYNOPSIS
-    Turns off self-service purchase for every product in the tenant, so users
-    cannot buy their own licences on the company card.
+    Turns off self-service purchase for every Microsoft product and third-party
+    offer type in the tenant, so users cannot buy their own licences on a
+    personal credit card.
 
 .DESCRIPTION
-    Self-service purchase lets any user buy a Power BI or Project licence with a
-    personal credit card and attach it to your tenant. You find out when the
-    licence shows up in a report, or when someone asks why their trial expired.
+    Self-service purchase is on by default, and every product Microsoft adds
+    later arrives enabled again. There is no single tenant-wide switch: the
+    policy is per product, which is exactly why this is a script and not a
+    checkbox you tick once during onboarding.
 
-    Microsoft enables it by default and adds new products over time, each one
-    enabled again. Running this after every product announcement is less fun than
-    it sounds, so schedule it.
+    Covers both halves of the policy:
+
+    - Microsoft products (Power BI Pro, Project, Visio, Copilot, Teams Premium,
+      Windows 365 and friends)
+    - Third-party offer types (SaaS, Power BI Visuals, Dynamics 365 Dataverse
+      Apps, Dynamics 365 Business Central)
+
+    Skipping the second half is easy to do and leaves the largest category,
+    third-party SaaS, wide open.
+
+.PARAMETER Value
+    Target state. Disabled blocks purchases and trials. OnlyTrialsWithoutPayment
+    Method blocks purchases but still allows the free trials that need no card,
+    which is a reasonable middle ground for Teams Exploratory and Viva Goals.
+    Enabled turns it back on.
 
 .PARAMETER PolicyId
-    Commerce policy to switch off. AllowSelfServicePurchase is the one you want.
+    Commerce policy to act on. AllowSelfServicePurchase is the one you want.
 
 .PARAMETER ProductId
     Limit to specific product IDs. Leave empty to cover every product.
+
+.PARAMETER SkipOfferType
+    Only touch Microsoft products, leave third-party offer types alone.
 
 .EXAMPLE
     Connect-MSCommerce
     .\Disable-SelfServicePurchase.ps1
 
 .EXAMPLE
-    # See what would change first
+    # See what would change before changing it
     .\Disable-SelfServicePurchase.ps1 -WhatIf
+
+.EXAMPLE
+    # Block purchases but keep the no-payment-method trials available
+    .\Disable-SelfServicePurchase.ps1 -Value OnlyTrialsWithoutPaymentMethod
 
 .NOTES
     Needs the MSCommerce module and a Billing Administrator or Global
-    Administrator. Connect with Connect-MSCommerce before running, or let the
-    script prompt you.
+    Administrator. Global Reader is enough to read the policies but not to
+    change them.
+
+    Existing purchases and trials are not affected. This only governs what
+    happens from now on.
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
+    [ValidateSet('Disabled', 'OnlyTrialsWithoutPaymentMethod', 'Enabled')]
+    [string]$Value = 'Disabled',
+
     [string]$PolicyId = 'AllowSelfServicePurchase',
 
-    [string[]]$ProductId
+    [string[]]$ProductId,
+
+    [switch]$SkipOfferType
 )
 
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+
+# ------------------------------------------------------------------ setup ---
 
 if (-not (Get-Module -ListAvailable -Name MSCommerce)) {
     Write-Host 'Installing the MSCommerce module...' -ForegroundColor Yellow
@@ -50,51 +81,155 @@ if (-not (Get-Module -ListAvailable -Name MSCommerce)) {
 }
 Import-Module MSCommerce -ErrorAction Stop
 
+# The module changed its update parameter between major versions. v2 documents
+# -Value with three states; older builds only understood a boolean -Enabled.
+# Detect it rather than guess, because guessing wrong fails silently per product.
+$updateParams = (Get-Command Update-MSCommerceProductPolicy).Parameters
+$useValueParam = $updateParams.ContainsKey('Value')
+
+if (-not $useValueParam) {
+    if ($Value -eq 'OnlyTrialsWithoutPaymentMethod') {
+        throw 'The installed MSCommerce module is too old for OnlyTrialsWithoutPaymentMethod. Run Update-Module MSCommerce and try again.'
+    }
+    Write-Warning 'Installed MSCommerce module has no -Value parameter, falling back to the legacy -Enabled switch. Update-Module MSCommerce is recommended.'
+}
+
+$enabledEquivalent = $Value -eq 'Enabled'
+
+function Invoke-PolicyUpdate {
+    <# One place that knows which parameter shape the installed module wants. #>
+    param([hashtable]$Target)
+
+    if ($useValueParam) {
+        Update-MSCommerceProductPolicy @Target -PolicyId $PolicyId -Value $Value | Out-Null
+    }
+    else {
+        Update-MSCommerceProductPolicy @Target -PolicyId $PolicyId -Enabled $enabledEquivalent | Out-Null
+    }
+}
+
+$results = [System.Collections.Generic.List[object]]::new()
+
+# ------------------------------------------------------- Microsoft products ---
+
 try {
-    $policies = @(Get-MSCommerceProductPolicies -PolicyId $PolicyId -ErrorAction Stop)
+    $products = @(Get-MSCommerceProductPolicies -PolicyId $PolicyId -ErrorAction Stop)
 }
 catch {
     throw "Could not read commerce policies. Run Connect-MSCommerce first and sign in as a Billing or Global Administrator. Original error: $($_.Exception.Message)"
 }
 
 if ($ProductId) {
-    $policies = @($policies | Where-Object { $ProductId -contains $_.ProductId })
+    $products = @($products | Where-Object { $ProductId -contains $_.ProductId })
 }
 
-$results = [System.Collections.Generic.List[object]]::new()
+Write-Host "Microsoft products in scope: $($products.Count)"
 
-foreach ($policy in $policies) {
+foreach ($product in $products) {
 
-    if (-not $policy.PolicyValue) {
+    # PolicyValue is a string ('Enabled' / 'Disabled' / ...), not a boolean.
+    # Treating it as one is why an earlier version of this script reported every
+    # product as needing a change on every run.
+    if ("$($product.PolicyValue)" -eq $Value) {
         $results.Add([pscustomobject]@{
-                ProductId   = $policy.ProductId
-                ProductName = $policy.ProductName
-                Action      = 'AlreadyDisabled'
+                Scope   = 'Product'
+                Name    = $product.ProductName
+                Id      = $product.ProductId
+                Was     = $product.PolicyValue
+                Action  = 'NoChange'
             })
         continue
     }
 
-    if ($PSCmdlet.ShouldProcess("$($policy.ProductName) ($($policy.ProductId))", 'Disable self-service purchase')) {
+    if ($PSCmdlet.ShouldProcess("$($product.ProductName) ($($product.ProductId))", "Set self-service purchase to $Value")) {
         try {
-            Update-MSCommerceProductPolicy -PolicyId $PolicyId -ProductId $policy.ProductId -Enabled $false | Out-Null
+            Invoke-PolicyUpdate -Target @{ ProductId = $product.ProductId }
             $results.Add([pscustomobject]@{
-                    ProductId   = $policy.ProductId
-                    ProductName = $policy.ProductName
-                    Action      = 'Disabled'
+                    Scope  = 'Product'
+                    Name   = $product.ProductName
+                    Id     = $product.ProductId
+                    Was    = $product.PolicyValue
+                    Action = 'Changed'
                 })
         }
         catch {
             $results.Add([pscustomobject]@{
-                    ProductId   = $policy.ProductId
-                    ProductName = $policy.ProductName
-                    Action      = "Failed: $($_.Exception.Message)"
+                    Scope  = 'Product'
+                    Name   = $product.ProductName
+                    Id     = $product.ProductId
+                    Was    = $product.PolicyValue
+                    Action = "Failed: $($_.Exception.Message)"
                 })
-            Write-Warning "$($policy.ProductName): $($_.Exception.Message)"
+            Write-Warning "$($product.ProductName): $($_.Exception.Message)"
         }
     }
 }
 
-$disabled = @($results | Where-Object Action -eq 'Disabled').Count
-Write-Host "Products checked: $($results.Count). Newly disabled: $disabled."
+# ---------------------------------------------------- third-party offer types ---
+
+if (-not $SkipOfferType -and -not $ProductId) {
+
+    $offerTypes = @()
+    try {
+        $offerTypes = @(Get-MSCommerceProductPolicies -PolicyId $PolicyId -Scope OfferType -ErrorAction Stop)
+    }
+    catch {
+        Write-Warning "Could not read third-party offer types: $($_.Exception.Message). Microsoft products were still processed."
+    }
+
+    Write-Host "Third-party offer types in scope: $($offerTypes.Count)"
+
+    foreach ($offer in $offerTypes) {
+
+        $offerId = if ($offer.PSObject.Properties.Name -contains 'OfferType') { $offer.OfferType } else { $offer.ProductId }
+        $offerName = if ($offer.PSObject.Properties.Name -contains 'ProductName') { $offer.ProductName } else { $offerId }
+
+        if ("$($offer.PolicyValue)" -eq $Value) {
+            $results.Add([pscustomobject]@{
+                    Scope  = 'OfferType'
+                    Name   = $offerName
+                    Id     = $offerId
+                    Was    = $offer.PolicyValue
+                    Action = 'NoChange'
+                })
+            continue
+        }
+
+        if ($PSCmdlet.ShouldProcess("$offerName ($offerId)", "Set self-service purchase to $Value")) {
+            try {
+                Invoke-PolicyUpdate -Target @{ OfferType = $offerId }
+                $results.Add([pscustomobject]@{
+                        Scope  = 'OfferType'
+                        Name   = $offerName
+                        Id     = $offerId
+                        Was    = $offer.PolicyValue
+                        Action = 'Changed'
+                    })
+            }
+            catch {
+                $results.Add([pscustomobject]@{
+                        Scope  = 'OfferType'
+                        Name   = $offerName
+                        Id     = $offerId
+                        Was    = $offer.PolicyValue
+                        Action = "Failed: $($_.Exception.Message)"
+                    })
+                Write-Warning "${offerName}: $($_.Exception.Message)"
+            }
+        }
+    }
+}
+
+# ----------------------------------------------------------------- summary ---
+
+$changed = @($results | Where-Object Action -eq 'Changed').Count
+$failed = @($results | Where-Object { $_.Action -like 'Failed*' }).Count
+
+Write-Host ''
+Write-Host "Checked: $($results.Count). Changed: $changed. Already correct: $(@($results | Where-Object Action -eq 'NoChange').Count). Failed: $failed."
+
+if ($failed -gt 0) {
+    Write-Warning 'Some policies could not be updated. Confirm you are signed in as Billing or Global Administrator.'
+}
 
 return $results
