@@ -39,6 +39,8 @@
 #>
 
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', 'IncludeOneDrivePersonalSites',
+    Justification = 'Read inside the script-scoped Add-Site helper, which PSScriptAnalyzer does not follow.')]
 [CmdletBinding()]
 param(
     # Limit to specific site URLs (skips discovery entirely)

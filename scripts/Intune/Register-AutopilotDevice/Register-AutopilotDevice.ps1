@@ -50,6 +50,8 @@
     The hardware hash comes from WMI and requires an elevated session.
 #>
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '',
+    Justification = 'The RMM supplies the secret as a plaintext environment variable. Wrapping it in a SecureString is a step up from the string it already was, not a downgrade.')]
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$TenantId = $env:AUTOPILOT_TENANT_ID,

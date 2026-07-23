@@ -89,6 +89,20 @@ Put a blank line between `#Requires` and your comment-based help:
 Without it PowerShell ignores the entire help block and `Get-Help` falls back to
 bare syntax. No warning, no error, just help that isn't there 🙃
 
+## Check it before you open the PR
+
+```powershell
+pwsh ./.github/Test-Conventions.ps1
+```
+
+Static checks only. Nothing runs, no tenant is touched, it takes a couple of
+seconds. It verifies the folder layout, an approved verb, that the script parses,
+that `Get-Help` actually finds your help, that there is at least one example,
+that you added the README row, and that no SAS token or tenant domain slipped in.
+
+CI runs the same script on every PR, plus PSScriptAnalyzer. If it passes locally
+it passes there.
+
 ## Before you open the PR
 
 Run your script once more and check `git status`. Output files hold tenant IDs,

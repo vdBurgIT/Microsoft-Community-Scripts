@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Conventions and analyzer
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Static checks only, so one fast Linux runner is enough. Nothing here
+      # executes a script or talks to a tenant.
+      - name: Check conventions
+        shell: pwsh
+        run: ./.github/Test-Conventions.ps1
+
+      - name: Cache PSScriptAnalyzer
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/powershell/Modules
+          key: pssa-${{ runner.os }}-v1
+
+      - name: Install PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          if (-not (Get-Module -ListAvailable -Name PSScriptAnalyzer)) {
+            Set-PSRepository PSGallery -InstallationPolicy Trusted
+            Install-Module PSScriptAnalyzer -Scope CurrentUser -Force
+          }
+
+      - name: Run PSScriptAnalyzer
+        shell: pwsh
+        run: |
+          $issues = Invoke-ScriptAnalyzer -Path ./scripts -Recurse `
+            -Settings ./PSScriptAnalyzerSettings.psd1
+
+          if ($issues) {
+            $issues | ForEach-Object {
+              # Annotate the PR diff instead of burying findings in the log.
+              "::warning file=$($_.ScriptPath),line=$($_.Line)::$($_.RuleName): $($_.Message)"
+            }
+            $issues | Format-Table Severity, ScriptName, Line, RuleName, Message -AutoSize |
+              Out-String -Width 200 | Write-Host
+            throw "$($issues.Count) analyzer finding(s)."
+          }
+
+          Write-Host 'PSScriptAnalyzer: no findings.'

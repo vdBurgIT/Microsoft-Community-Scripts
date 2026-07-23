@@ -57,39 +57,41 @@ if (-not (Test-Path -LiteralPath $ProgramPath)) {
 
 $results = [System.Collections.Generic.List[object]]::new()
 
-function Add-RuleIfMissing {
-    param(
-        [Parameter(Mandatory)][string]$DisplayName,
-        [Parameter(Mandatory)][hashtable]$RuleParams
-    )
-
-    if (Get-NetFirewallRule -DisplayName $DisplayName -ErrorAction SilentlyContinue) {
-        $results.Add([pscustomobject]@{ Rule = $DisplayName; Action = 'AlreadyExists' })
-        return
-    }
-
-    if ($PSCmdlet.ShouldProcess($DisplayName, 'Create inbound firewall rule')) {
-        New-NetFirewallRule @RuleParams -DisplayName $DisplayName | Out-Null
-        $results.Add([pscustomobject]@{ Rule = $DisplayName; Action = 'Created' })
-    }
-}
+# Build the full set of rules first, then create them in one loop. Keeping
+# ShouldProcess in the script scope is what makes -WhatIf behave.
+$wanted = [System.Collections.Generic.List[hashtable]]::new()
 
 foreach ($protocol in 'TCP', 'UDP') {
     foreach ($p in $Port) {
-        Add-RuleIfMissing -DisplayName "$RuleNamePrefix - $protocol Port $p" -RuleParams @{
-            Direction = 'Inbound'
-            Protocol  = $protocol
-            LocalPort = $p
-            Program   = $ProgramPath
-            Action    = 'Allow'
-        }
+        $wanted.Add(@{
+                DisplayName = "$RuleNamePrefix - $protocol Port $p"
+                Direction   = 'Inbound'
+                Protocol    = $protocol
+                LocalPort   = $p
+                Program     = $ProgramPath
+                Action      = 'Allow'
+            })
     }
 }
 
-Add-RuleIfMissing -DisplayName "$RuleNamePrefix - Program" -RuleParams @{
-    Direction = 'Inbound'
-    Program   = $ProgramPath
-    Action    = 'Allow'
+$wanted.Add(@{
+        DisplayName = "$RuleNamePrefix - Program"
+        Direction   = 'Inbound'
+        Program     = $ProgramPath
+        Action      = 'Allow'
+    })
+
+foreach ($rule in $wanted) {
+
+    if (Get-NetFirewallRule -DisplayName $rule.DisplayName -ErrorAction SilentlyContinue) {
+        $results.Add([pscustomobject]@{ Rule = $rule.DisplayName; Action = 'AlreadyExists' })
+        continue
+    }
+
+    if ($PSCmdlet.ShouldProcess($rule.DisplayName, 'Create inbound firewall rule')) {
+        New-NetFirewallRule @rule | Out-Null
+        $results.Add([pscustomobject]@{ Rule = $rule.DisplayName; Action = 'Created' })
+    }
 }
 
 $created = @($results | Where-Object Action -eq 'Created').Count
