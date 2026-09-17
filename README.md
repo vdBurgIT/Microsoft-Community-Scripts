@@ -27,6 +27,18 @@ being ours 🤝
 | [Add-TeamsFirewallRule](scripts/Intune/Add-TeamsFirewallRule/) | Intune | Teams calls dropping to audio-only because a user dismissed a firewall prompt |
 | [Set-ScreensaverLogout](scripts/Intune/Set-ScreensaverLogout/) | Intune | Ten locked sessions on a shared desktop and no memory left |
 | [Clear-LocalGuestsGroup](scripts/Intune/Clear-LocalGuestsGroup/) | Intune | An audit finding about a group that was supposed to be empty |
+| [Get-StaleUserReport](scripts/Entra/Get-StaleUserReport/) | Entra | Working out who still needs a licence, one portal blade at a time |
+| [Block-StaleGuestAccount](scripts/Entra/Block-StaleGuestAccount/) | Entra | A guest directory full of people who left the partner two years ago |
+| [Get-AppCredentialExpiry](scripts/Entra/Get-AppCredentialExpiry/) | Entra | Finding out a client secret expired because something broke on Monday |
+| [Get-AdminRoleReport](scripts/Entra/Get-AdminRoleReport/) | Entra | An access review that lists one group where nine people hold Global Administrator |
+| [Remove-StaleManagedDevice](scripts/Intune/Remove-StaleManagedDevice/) | Intune | A compliance figure dragged down by laptops that were reimaged last spring |
+| [Get-PolicyAssignmentReport](scripts/Intune/Get-PolicyAssignmentReport/) | Intune | Opening every profile to find out what one group actually receives |
+| [Get-MailboxForwardingReport](scripts/Exchange/Get-MailboxForwardingReport/) | Exchange | The inbox rule quietly copying every message to a personal address |
+| [Disable-LegacyMailProtocol](scripts/Exchange/Disable-LegacyMailProtocol/) | Exchange | POP, IMAP and SMTP AUTH still taking a password with no MFA in sight |
+| [Get-SpoSharingReport](scripts/SharePoint/Get-SpoSharingReport/) | SharePoint | One site left on anonymous links after a project that ended in 2023 |
+| [Get-SpoStorageReport](scripts/SharePoint/Get-SpoStorageReport/) | SharePoint | Hunting for the sites eating your storage that nobody has opened in a year |
+| [Get-LicenseAssignmentReport](scripts/Microsoft365/Get-LicenseAssignmentReport/) | Microsoft 365 | Forty E3 licences sitting on accounts that were blocked in March |
+| [Get-OwnerlessGroupReport](scripts/Microsoft365/Get-OwnerlessGroupReport/) | Microsoft 365 | A Team nobody owns, so nobody can add the new starter |
 
 ## Grab and go
 
