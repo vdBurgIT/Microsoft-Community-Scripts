@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Static checks only, so one fast Linux runner is enough. Nothing here
       # executes a script or talks to a tenant.
@@ -24,7 +24,7 @@ jobs:
         run: ./.github/Test-Conventions.ps1
 
       - name: Cache PSScriptAnalyzer
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.local/share/powershell/Modules
           key: pssa-${{ runner.os }}-v1
